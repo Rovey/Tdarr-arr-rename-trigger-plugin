@@ -1,0 +1,37 @@
+{
+  "name": "tdarr-arr-rename-trigger-plugin",
+  "version": "1.0.0",
+  "description": "Tdarr plugin to automatically trigger Radarr/Sonarr file rename after transcoding",
+  "main": "Tdarr_Plugin_rovey_arr_rename_trigger.js",
+  "scripts": {
+    "test": "echo \"No tests specified\" && exit 0"
+  },
+  "repository": {
+    "type": "git",
+    "url": "git+https://github.com/Rovey/Tdarr-arr-rename-trigger-plugin.git"
+  },
+  "keywords": [
+    "tdarr",
+    "radarr",
+    "sonarr",
+    "plugin",
+    "transcode",
+    "rename",
+    "automation",
+    "media",
+    "plex",
+    "jellyfin"
+  ],
+  "author": "Rovey (Roy Ernst)",
+  "license": "MIT",
+  "bugs": {
+    "url": "https://github.com/Rovey/Tdarr-arr-rename-trigger-plugin/issues"
+  },
+  "homepage": "https://github.com/Rovey/Tdarr-arr-rename-trigger-plugin#readme",
+  "dependencies": {
+    "sync-request": "^6.1.0"
+  },
+  "engines": {
+    "node": ">=14.0.0"
+  }
+}
