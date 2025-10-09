@@ -4,7 +4,7 @@ module.exports.dependencies = [
 ];
 
 const details = () => ({
-    id: 'Tdarr_Plugin_ruoy_arr_rename_trigger',
+    id: 'Tdarr_Plugin_rovey_arr_rename_trigger',
     Stage: 'Post-processing',
     Name: 'Trigger Radarr/Sonarr Rename',
     Type: 'Video',
