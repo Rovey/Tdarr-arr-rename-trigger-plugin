@@ -55,12 +55,15 @@ A Tdarr post-processing plugin that automatically triggers Radarr or Sonarr to r
 
 ### In Tdarr Flow
 
-1. Add the plugin as a **Post-processing** step in your Tdarr Flow
-2. Configure the plugin settings:
+1. Add the plugin to your Tdarr Flow using the **Classic Plugin** node (`runClassicTranscodePlugin`)
+2. Select `Tdarr_Plugin_rovey_arr_rename_trigger` from the plugin dropdown
+3. Configure the plugin settings:
    - Set your Radarr/Sonarr host URLs
    - Add your API keys
    - Configure path matching strings (e.g., `/movies/`, `/tv/`, `/media/films/`)
-3. Enable/disable Radarr or Sonarr based on your needs
+4. Enable/disable Radarr or Sonarr based on your needs
+
+> **Note:** This is a **Classic Plugin** with Stage: `Post-processing`. In Tdarr Flows, use the `runClassicTranscodePlugin` node to execute it after your transcode operations.
 
 ### Example Configurations
 
