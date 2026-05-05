@@ -7,9 +7,10 @@ A Tdarr post-processing plugin that automatically triggers Radarr or Sonarr to r
 - 🎬 **Radarr Support**: Automatically rename movies after transcoding
 - 📺 **Sonarr Support**: Automatically rename TV series episodes after transcoding
 - 🔍 **Smart Detection**: Path-based detection with configurable path matching
-- 🎯 **Accurate Lookup**: Primary lookup by exact file path, fallback to IMDB/TMDB/TVDB IDs
+- 🎯 **Accurate Lookup**: Primary lookup by exact file path, fallback to IMDB/TMDB/TVDB IDs (client-side filtered against the full library to avoid Radarr's ignored-query-param footgun)
 - ⚙️ **Flexible Configuration**: Enable/disable services independently with custom path filters
-- 🔄 **Optional Refresh**: Trigger refresh before rename to ensure new files are detected
+- 🔄 **Synchronous Refresh + Rename**: Polls the Radarr/Sonarr command queue until `RefreshMovie`/`RefreshSeries` actually completes before triggering rename — eliminates the race that left files with stale codec tags after a transcode
+- ⚡ **No-op Skip**: Probes the rename-preview endpoint after refresh and skips the rename API call when nothing is pending
 - 📝 **Detailed Logging**: Comprehensive logs for debugging and monitoring
 
 ## Installation
@@ -114,11 +115,12 @@ Sonarr:
 
 1. **Path Detection**: Checks if file path contains configured strings
 2. **Service Selection**: Enables Radarr/Sonarr based on path matching
-3. **File Lookup**: 
-   - **Primary**: Searches for exact file path match in Radarr/Sonarr
-   - **Fallback**: Uses IMDB/TMDB/TVDB ID extracted from path
-4. **Refresh** (optional): Triggers media refresh in Radarr/Sonarr
-5. **Rename**: Triggers rename command with correct file naming
+3. **File Lookup**:
+   - **Primary**: Searches for exact file path match against the full Radarr/Sonarr library
+   - **Fallback**: Filters the same already-fetched library client-side by IMDB/TMDB/TVDB ID extracted from the path (Radarr's `?imdbId=` query param is silently ignored, so server-side filtering is unreliable)
+4. **Refresh** (optional): Fires `RefreshMovie`/`RefreshSeries` and **polls `GET /api/v3/command/{id}` once per second** (60 s timeout) until the command reaches `completed`/`failed`/`aborted`. This guarantees the disk rescan + mediainfo update has finished before the rename runs.
+5. **Rename Probe**: Calls `GET /api/v3/rename?movieId=...` (or `?seriesId=...`). If the response is `[]`, skips the rename API call entirely.
+6. **Rename**: Fires `RenameMovie`/`RenameSeries` and waits for that command to complete the same way, so the plugin's success log reflects actual completion, not just queueing.
 
 ### ID Detection
 
@@ -131,15 +133,19 @@ The plugin automatically extracts IDs from file paths:
 ### API Commands Used
 
 **Radarr (v3 API):**
-- `GET /api/v3/movie` - List all movies
-- `POST /api/v3/command` with `RefreshMovie` - Refresh movie metadata
-- `POST /api/v3/command` with `RenameMovie` - Trigger file rename
+- `GET /api/v3/movie` — List all movies (used for both file-path and IMDB/TMDB matching)
+- `POST /api/v3/command` with `RefreshMovie` — Refresh movie metadata + rescan disk
+- `GET /api/v3/command/{id}` — Poll command status until completion
+- `GET /api/v3/rename?movieId={id}` — Probe whether any rename is pending
+- `POST /api/v3/command` with `RenameMovie` — Trigger file rename
 
 **Sonarr (v3 API):**
-- `GET /api/v3/series` - List all series
-- `GET /api/v3/episodefile?seriesId=X` - Get episode files for series
-- `POST /api/v3/command` with `RefreshSeries` - Refresh series metadata
-- `POST /api/v3/command` with `RenameSeries` - Trigger file rename
+- `GET /api/v3/series` — List all series
+- `GET /api/v3/episodefile?seriesId=X` — Get episode files for series
+- `POST /api/v3/command` with `RefreshSeries` — Refresh series metadata + rescan disk
+- `GET /api/v3/command/{id}` — Poll command status until completion
+- `GET /api/v3/rename?seriesId={id}` — Probe whether any rename is pending
+- `POST /api/v3/command` with `RenameSeries` — Trigger file rename
 
 ## Example Log Output
 
@@ -155,9 +161,24 @@ The plugin automatically extracts IDs from file paths:
 [RenameTrigger] Using movie: K3 The Ice Princess (id=42)
 [RenameTrigger] Triggering RefreshMovie...
 [RenameTrigger] RefreshMovie response: 201
+[RenameTrigger] Waiting for RefreshMovie (id=1724118) to finish before renaming...
+[RenameTrigger] RefreshMovie finished with status: completed
+[RenameTrigger] Pending renames after refresh: 1
 [RenameTrigger] Triggering RenameMovie...
 [RenameTrigger] RenameMovie response: 201
+[RenameTrigger] RenameMovie finished with status: completed
 [RenameTrigger] ✓ Radarr rename command sent successfully!
+```
+
+### No-op (file already correctly named)
+
+```
+[RenameTrigger] Triggering RefreshMovie...
+[RenameTrigger] RefreshMovie response: 201
+[RenameTrigger] Waiting for RefreshMovie (id=1724120) to finish before renaming...
+[RenameTrigger] RefreshMovie finished with status: completed
+[RenameTrigger] Pending renames after refresh: 0
+[RenameTrigger] ✓ No rename needed — skipping RenameMovie.
 ```
 
 ### Successful Sonarr Rename
@@ -172,8 +193,12 @@ The plugin automatically extracts IDs from file paths:
 [RenameTrigger] Using series: Invincible (id=23)
 [RenameTrigger] Triggering RefreshSeries...
 [RenameTrigger] RefreshSeries response: 201
+[RenameTrigger] Waiting for RefreshSeries (id=98212) to finish before renaming...
+[RenameTrigger] RefreshSeries finished with status: completed
+[RenameTrigger] Pending renames after refresh: 1
 [RenameTrigger] Triggering RenameSeries...
 [RenameTrigger] RenameSeries response: 201
+[RenameTrigger] RenameSeries finished with status: completed
 [RenameTrigger] ✓ Sonarr rename command sent successfully!
 ```
 
@@ -208,10 +233,10 @@ The plugin automatically extracts IDs from file paths:
 
 ### Files Not Actually Renamed
 
-- Enable `refresh_first` option to ensure new file is detected
-- Manually trigger refresh in Radarr/Sonarr to verify file is recognized
-- Check Radarr/Sonarr rename preview to see if rename would occur
-- Verify naming scheme is configured in Radarr/Sonarr settings
+- Enable `refresh_first` option (the plugin needs it to update mediainfo before checking for a rename)
+- Confirm the plugin log contains `RefreshMovie finished with status: completed` and `Pending renames after refresh: N` — if the refresh times out (60 s), open Radarr's System → Tasks page and look for a stuck queue
+- If `Pending renames after refresh: 0` appears, Radarr genuinely doesn't see anything to rename — check your naming scheme in Radarr/Sonarr settings against the actual filename
+- Manually call `GET /api/v3/rename?movieId=...` (or `?seriesId=...`) to confirm what Radarr/Sonarr think is pending
 
 ## Contributing
 
@@ -232,6 +257,15 @@ This project is licensed under the MIT License - see the [LICENSE](LICENSE) file
 - Uses [sync-request](https://www.npmjs.com/package/sync-request) for synchronous HTTP calls
 
 ## Version History
+
+### 1.2.0 (2026-05-05)
+- Fix the silent IMDB/TMDB/TVDB fallback bug: Radarr's `GET /api/v3/movie?imdbId=` is ignored server-side and returns the full library, so the previous code grabbed `[0]` (the alphabetically-first movie) instead of the requested title. Lookup now filters the already-fetched library client-side; same fix applied to the Sonarr fallback.
+- Add idempotent skip: probe `GET /api/v3/rename?movieId=...` (or `?seriesId=...`) after the refresh completes, and skip the `RenameMovie`/`RenameSeries` API call entirely when nothing is pending.
+- Wait for the rename command to complete (poll `GET /api/v3/command/{id}`) before logging success, so the plugin's "✓ rename command sent successfully" message reflects actual completion rather than just queueing.
+
+### 1.1.0 (2026-05-05)
+- Fix race condition where Tdarr's post-transcode rename trigger left files with stale codec tags in the filename. The previous fire-and-forget pattern queued `RefreshMovie` and `RenameMovie` back-to-back; Radarr's command worker could execute the rename before the refresh's disk rescan + mediainfo update completed, so the rename evaluator compared the new filename against stale DB metadata, found it "matched", and skipped the rename. The plugin now polls `GET /api/v3/command/{id}` once per second (60 s timeout) until the refresh reaches `completed`/`failed`/`aborted` before triggering the rename. Same change applied to the Sonarr branch.
+- Sleep between polls uses `Atomics.wait` rather than busy-waiting, so polling does not pin a CPU core.
 
 ### 1.0.0 (2025-10-09)
 - Initial release
