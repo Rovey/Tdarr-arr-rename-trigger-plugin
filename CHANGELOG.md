@@ -55,5 +55,4 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - ID extraction from file paths: IMDB (tt\d+), TMDB (tmdbid-\d+), TVDB (tvdbid-\d+)
 
 [1.2.0]: https://github.com/Rovey/Tdarr-arr-rename-trigger-plugin/releases/tag/v1.2.0
-[1.1.0]: https://github.com/Rovey/Tdarr-arr-rename-trigger-plugin/releases/tag/v1.1.0
 [1.0.0]: https://github.com/Rovey/Tdarr-arr-rename-trigger-plugin/releases/tag/v1.0.0
